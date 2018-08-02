@@ -11,7 +11,7 @@ F_COUNTRY = 'country'
 F_REGION = 'region'
 F_SCORE = 'score'
 
-class CVTrie:
+class CVTrie():
 
     class CVTrieNode:
         def __init__(self, char, cid):
@@ -38,7 +38,10 @@ class CVTrie:
         # walk the trie until exhaustion of the prefix
         node = self
         for c in prefix.lower():
-            node = node.nodes[c]
+            node = node.nodes.get(c, None)
+            if node is None:
+                # not found
+                return result
 
         # process the CIDs
         for cid in node.ids:
@@ -101,10 +104,7 @@ class CVTrie:
                 child.ids.add(cid)
             node = child
 
-class CVLoader:
-    def __init__(self, trie):
-        print('CVLoader::init')
-
+    def load(self, path):
         regionLookup = {
             '01': 'AB',
             '02': 'BC',
@@ -122,13 +122,13 @@ class CVLoader:
         }
 
         try:
-            self.legend = None
-            with io.open('cities_canada-usa.tsv', mode='r', encoding='utf-8') as lines:
+            legend = None
+            with io.open(path, mode='r', encoding='utf-8') as lines:
                 for line in lines:
                     fields = line.strip().split('\t')
-                    if self.legend is None:
-                        # not used, for future consideration
-                        self.legend = fields
+                    if legend is None:
+                        # not used, serves as an init marker here
+                        legend = fields
                     else:
                         # fields: 0: id | 1: name | 2: ascii | 3: altname | 4: lat | 5: long | 8: country | 10: region
                         if fields[8] == 'US':
@@ -142,10 +142,11 @@ class CVLoader:
                             country = 'USA'
                         else:
                             country = 'Canada'
-                        trie.add(fields[0], fields[1], fields[2], float(fields[4]), float(fields[5]), country, region)
+                        self.add(fields[0], fields[1], fields[2], float(fields[4]), float(fields[5]), country, region)
         except ValueError:
             print('Could not load data')
 
+# http request handler implementation
 class CVRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         print('CVRequestHandler::do_GET url:[%s]' % self.path)
@@ -162,8 +163,15 @@ class CVRequestHandler(BaseHTTPRequestHandler):
         prefix = unicodedata.normalize('NFD', prefix).encode('ascii', 'ignore').decode('utf-8')
 
         # if not provided, use a minimal latitute or longitude
-        latitude = float(params.get(F_LATITUDE, '0.00001'))
-        longitude = float(params.get(F_LONGITUDE, '0.00001'))
+        try:
+            latitude = float(params.get(F_LATITUDE, '0.00001'))
+        except ValueError:
+            latitude = 0.00001
+
+        try:
+            longitude = float(params.get(F_LONGITUDE, '0.00001'))
+        except ValueError:
+            longitude = 0.00001
 
         results = vtrie.find(prefix, latitude, longitude)
 
@@ -176,6 +184,7 @@ class CVRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(response).encode('utf-8'))
         self.wfile.close()
 
+# wrapper for the http listener
 class CVService:
     def start(self, handlerClass=CVRequestHandler):
         print('CVSerice::start')
@@ -187,6 +196,6 @@ class CVService:
 
 if __name__ == '__main__':
     vtrie = CVTrie()
-    CVLoader(vtrie)
+    vtrie.load('cities_canada-usa.tsv')
     svc = CVService()
     svc.start()
