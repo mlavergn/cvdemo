@@ -12,6 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 // City data
@@ -103,6 +108,11 @@ func (trie *Trie) find(prefix string, latitude float64, longitude float64) *Quer
 	var node *TrieNode
 	// walk the trie until exhaustion of the prefix
 	for _, c := range strings.ToLower(prefix) {
+		// skip [a-z] query characters
+		if c < 97 || c > 122 {
+			continue
+		}
+
 		if node == nil {
 			// assign an initial node
 			node = trie.nodes[c]
@@ -274,6 +284,11 @@ func (trie *Trie) load(path string) bool {
 func (trie *Trie) defaultHandler(resp http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	q := req.FormValue("q")
+
+	// strip extended characters
+	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	prefix, _, _ := transform.String(t, q)
+
 	latitude, errLat := strconv.ParseFloat(req.FormValue("latitude"), 64)
 	longitude, errLong := strconv.ParseFloat(req.FormValue("longitude"), 64)
 
@@ -285,8 +300,8 @@ func (trie *Trie) defaultHandler(resp http.ResponseWriter, req *http.Request) {
 	}
 
 	timer := time.Now()
-	result := trie.find(q, latitude, longitude)
-	println("Find completed in", time.Since(timer)/time.Microsecond, "μs")
+	result := trie.find(prefix, latitude, longitude)
+	println("Search for", prefix, "completed in", time.Since(timer)/time.Microsecond, "μs")
 
 	b, err := json.Marshal(result)
 	if err != nil {

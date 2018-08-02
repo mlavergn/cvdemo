@@ -38,6 +38,9 @@ class CVTrie():
         # walk the trie until exhaustion of the prefix
         node = self
         for c in prefix.lower():
+            # skip non [a-z] characters
+            if ord(c) < 97 or ord(c) > 122:
+                continue
             node = node.nodes.get(c, None)
             if node is None:
                 # not found
